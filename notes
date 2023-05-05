@@ -1,0 +1,192 @@
+Project Outline
+
+
+Linux Booting on Beaglebone Black using MLO, U-boot, uImage, .dtb and RFS.
+Booting MLO ( from Angstrom distribution demo) https://github.com/niekiran/EmbeddedLinuxBBB/tree/master/pre-built-images/Angstrom_Demo
+Connect sd card to pc, sd card to be partitioned into BOOT(FAT) and RFS(EXT3/EXT4), dmesg command to check sd card connected to host
+Download gparted for flashing sd card with images. Enable boot flag on boot partition. Copy MLO into boot partition cp MLO-beagle /media/usr/BOOT/
+Connect minicom and boot BB, check boot logs in console
+Booting u-boot-beaglebone-2013.04-r0.img ( from Angstrom distribution demo) https://github.com/niekiran/EmbeddedLinuxBBB/tree/master/pre-built-images/Angstrom_Demo  copy uboot image into BOOT partition of sd card
+Copy angstrom root file system from above link into RFS partition of sd card, linux uImage, beaglebone .dtb file now lies in /boot/ in ROOTFS partition of sd card.
+Copy uEnv.txt from above link into BOOT partition of sd card. uEnv.txt instructs the uboot to load uImage and dtb files from /boot/ in ROOTFS partition. Check uEnv.txt format from https://github.com/niekiran/EmbeddedLinuxBBB/tree/master/pre-built-images/Angstrom_Demo 
+
+
+   
+eMMC Booting, SD Card booting, eMMC flasher script.
+Download latest debian OS. Write the bootable image to sd card first. Boot the board from sd card. Execute the eMMC flasher script which will write the contents of the sd card to eMMC memory.
+Check current debian os version using lsb_release -da command
+Go to beagleboard.org/latest-images and download latest tar.xz image
+Copy image to /dev/sd* using dd if of command
+Go to /boot/uEnv.txt and remove the commented eMMC flasher script command
+
+Wrote a uEnv.txt file from scratch for uBoot.
+uEnv.txt  is a collection of various env variables that are initialized to a number of u boot commands and automating the command execution. Set env <name_of_env> cmd1;cmd2;cmd3 ; Cmd run <name_of_env>,
+U-boot has both standard and user defined environment variables which can be used to override/change the behavior of uBoot.
+You can store multiple u-boot commands as a value in a single environment variable and run.
+U-boot always tries to read the uEnv.txt file from the Boot source. If UBoot doesn’t find any such file, it uses the default values of uEnv variables. If you don’t want uBoot to use default values, enforce new values using uEnv.txt.
+uEnv uses bootcmd as arguments for bootm command. Cmd syntax load mmc 0:1 0x82000000 /boot/uImage
+We load the linux uImage from the second partition of the eMMC memory in to DDR memory. Load mmc 1:2 0x82000000 /boot/uImage
+Load the .dtb image to the DDR memory from eMMC. Load mmc 1:2 0x88000000 /boot/am335x-boneblack.dtb
+Send bootargs to the linux kernel from uboot. Setenv bootargs console=ttyO0,115200 root=/dev/mmcblk0p2 rw
+Boot from memory . cmd bootm <uImage address DDR> - <dtb DDR address>
+Transfer uEnv.txt from host to board over uart using xmodem protocol.uboot cmdline : loady <press enter> , enter gui; select file to transfer press enter; env import -t 0x80200000 290
+
+Booted BBB over UART using x modem protocol.
+Keep all boot images like SPL, uboot, uImage, DTB and RFS on the host pc.
+Make sure board boots from uart0 by appropriate sysboot combination. Press hold combination etc.
+Make sure mini usb cable is not connected. Powr up using power adapter
+In uart boot mode, the rom bootloader is waiting for spl image over xmodem protocol only. Once spl runs on internal sram, it tries to get third stage bootloader that is uboot image over xmodem protocol from the host.
+When u boot executes, you can use uboot commands such as loadx, lady to load rest of the images over uart like linux kernel image, DTB, initramfs in the DDR memory of the board at recommended address.
+
+Booted BBB over IP network using TFTP protocol.
+Trivial file transfer protocol is used to transfer files between tftp client and tftp server.
+Tftp server is host pc with ip 192.168.7.1 and tftp client is BBB with ip 192.168.7.2.
+We boot the board via sd card with the following images : SPL, uBoot.img, uEnv.txt
+We transfer the following images using TFTP from host to board over ethernet i.e am335x-boneblack.dtb, uImage, initramfs
+Boot from sd card, reach u boot command line, then use tftp commands to fetch all the required images ie uImage, dtb and the RFS stored in tftp server ie host pc.
+Prepare a uEnv.txt file to instruct the uboot to load subsequent images from tftp server on host pc.
+Uboot reads the uEnv.txt file and executes the tftp commands to fetch and place the various boot images from tftp server onto DDR memory.
+Then we ask uboot to boot from the location where it placed the linux kernel image on to the DDR memory.
+Use tftpboot 0x82000000 uImage/dtb/rfs; setbootargs console=ttyO0,115200 root=/dev/ram0 rw initrd=0x88080000
+Arm cross toolchain installation, configuring and generating SPL,MLO and u-boot images
+Cross tool chain installation arm-linux-gnueabihf from Linaro releases website
+Export path of the cross compilation toolchain in .bashrc file for permanent change; source <pathof_bashrc>
+export PATH=$PATH:/home/kiran/BBB_Workspace/Downloads/gcc-linaro-6.3.1-2017.02-x86_64_arm-linux-gnueabihf/bin
+Compile u-boot source code as per following: cd to u boot source directory first
+*************************U-boot Compilation ***************************************************
+
+
+STEP 1: distclean : deletes all the previously compiled/generated object files. 
+
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- distclean
+
+STEP 2 : apply board default configuration for uboot
+
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- am335x_boneblack_defconfig
+
+
+STEP 3 : run menuconfig, if you want to do any settings other than default configuration . 
+
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-  menuconfig
+
+
+STEP 4 : compile 
+
+make CROSS_COMPILE=arm-linux-gnueabihf- -j4  // -j4(4 core machine) will instructs the make tool to spawn 4 threads
+make CROSS_COMPILE=arm-linux-gnueabihf- -j8  // -j8(8 core machine) will instructs the make tool to spawn 8 threads
+
+You’re uboot source code is compiled
+
+Configuring and generating Linux uImage for BBB
+************************* linux compilation ***************************************************
+download official kernel source from here : www.github.com/beagleboard/linux
+STEP 1:
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- distclean
+
+STEP 2:
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bb.org_defconfig (4.4)
+for 4.11 use omap2plus_defconfig
+
+STEP 3:
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- menuconfig
+
+STEP 4:
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- uImage dtbs LOADADDR=0x80008000 -j4
+
+STEP 5:
+For compiling dynamically loadable kernel modules <M>
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- -j4 modules
+
+STEP 6:
+At this stage, we have cross compiled all our loadable kernel modules. Now all those .ko files need to be transferred to the RFS. Modules installation step
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=<path of the RFS> modules_install
+
+
+Created minimal RFS using Busybox, Linux Booting using RFS from Busybox. Integrating and testing of rcS startup scripts and Busybox init.
+
+************************* Busy box compilation ***************************************************
+
+STEP 1: download busybox 
+
+STEP 2 : Apply default configuration
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- defconfig
+
+STEP 3 : change default settings if you want 
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- menuconfig
+
+STEP 4 : generate the busy box binary and minimal file system 
+Install_path is where the minimal RFS by busybox will be stored
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- CONFIG_PREFIX=<install_path> install
+
+After this 
+Now all those .ko files need to be transferred to the RFS. Modules installation step
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=<path of the RFS created by busybox> modules_install
+
+After this step, lib folder will be added to busybox RFS.
+Install usb over ethernet driver, lkm already present in /lib of busybox RFS. now, 
+modprobe cdc_eem.ko (difference bw modprobe and insmod? remember)
+
+Now lets use this busybox RFS as the linux kernel
+Keep mlo, uboot.img in sd card ( BOOT partition)
+Load uImage from host pc using tftp. Keep uImage and dtb in tftp server.
+Mount RFS using NFS protocol ( keep busybox RFS in /srv/nfs/bbb)
+Also keep uEnv.txt file in sd card (BOOT partition) to instruct the uboot to load the uImage from tftp server ( host pc) and mount busybox RFS as RFS using NFS protocol
+
+uEnv.txt
+
+console=ttyO0,115200n8
+
+
+
+
+ipaddr=192.168.7.2
+
+
+serverip=192.168.7.1
+
+
+absolutepath=/var/lib/tftpboot/
+
+
+rootpath=/srv/nfs/bbb,nolock,wsize=1024,rsize=1024 rootwait rootdelay=5
+
+
+loadtftp=echo Booting from network ...;tftpboot ${loadaddr} ${absolutepath}uImage; tftpboot ${fdtaddr} ${absolutepath}am335x-boneblack.dtb
+
+
+netargs=setenv bootargs console=${console} root=/dev/nfs rw nfsroot=${serverip}:${rootpath}
+
+
+uenvcmd=setenv autoload no; run loadtftp; run netargs; bootm ${loadaddr} - ${fdtaddr}
+
+
+Start the nfs server to send the RFS to board, cmd sudo exportfs -arv; cmd sudo service nfs-kernel-server restart; cmd sudo service nfs-kernel-server status
+
+Boot from sd card, open minicom, check bootlogs, create/dev folder in RFS for working properly.
+
+Busybox init looks for rcS script in /etc/init.d/ for init function. rcS script is used to start services during startup.
+
+Enabling Ethernet over USB by driver integration and auto-loading of drivers using system startup. 
+Now all those .ko files need to be transferred to the RFS. Modules installation step
+ make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=<path of the RFS created by busybox> modules_install
+
+After this step, lib folder will be added to busybox RFS.
+Install usb over ethernet driver, lkm already present in /lib of busybox RFS. now, 
+modprobe cdc_eem.ko (difference bw modprobe and insmod? remember)
+
+Check lsmod to check list of kernel module
+
+You can install ethernet over usb lkm using the above method. Create a script in the /etc/init.d/ folder and call the script from rcS startup file.
+
+Configuring and building Buildroot for linux booting on BBB. Tested buildroot RFS and ssh support on BBB.
+Download buildroot
+Make beaglebone_defconfig  ( .config file is created now)
+Make menuconfig
+	Select external toolchain, provide the path of the downloaded cross toolchain 
+	Select if you want buildroot to build uImage, U boot
+	Make
+
+Check output in /output/images/ directory for final images - MLO, u-boot-spl.bin, uEnv.txt, uImage, beaglebone.dtb file, rootfs.tar.xz, now boot linux using these images as described earlier.
+
+
+Buildroot linux-u boot image generation and testing on BBB.
