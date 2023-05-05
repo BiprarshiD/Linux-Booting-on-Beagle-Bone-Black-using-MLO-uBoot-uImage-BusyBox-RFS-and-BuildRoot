@@ -1,0 +1,1 @@
+this directory contains images for booting of BBB over IP using tftp protocol. tftp server set up on linux host pc, tftp client BBB
